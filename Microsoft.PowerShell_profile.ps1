@@ -6,18 +6,14 @@ if ($host.Name -eq "ConsoleHost")
 	Import-Module PSReadLine
 }
 
+Import-Module posh-git
+Import-Module oh-my-posh
+#Import-Module 'C:\dev\vcpkg\scripts\posh-vcpkg'
+Import-Module -Name Terminal-Icons
+Clear-Host
 
-Set-PoshPrompt space
+Set-PoshPrompt -Theme space
 
-# Searching for commands with up/down arrow is really handy.  The
-# option "moves to end" is useful if you want the cursor at the end
-# of the line while cycling through history like it does w/o searching,
-# without that option, the cursor will remain at the position it was
-# when you used up arrow, which can be useful if you forget the exact
-# string you started the search on.
-Set-PSReadLineOption -HistorySearchCursorMovesToEnd
-#Set-PSReadLineKeyHandler -Key UpArrow -Function HistorySearchBackward
-#Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
 Set-PSReadLineOption -PredictionSource History
 Set-PSReadLineOption -PredictionViewStyle ListView
 Set-PSReadLineOption -EditMode Windows
@@ -318,10 +314,46 @@ Set-PSReadLineKeyHandler -Key Backspace `
     }
 }
 
+# winget parameter completion
+Register-ArgumentCompleter -Native -CommandName winget -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+        [Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.Utf8Encoding]::new()
+        $Local:word = $wordToComplete.Replace('"', '""')
+        $Local:ast = $commandAst.ToString().Replace('"', '""')
+        winget complete --word="$Local:word" --commandline "$Local:ast" --position $cursorPosition | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+}
 
+# PowerShell parameter completion shim for the dotnet CLI
+Register-ArgumentCompleter -Native -CommandName dotnet -ScriptBlock {
+     param($commandName, $wordToComplete, $cursorPosition)
+         dotnet complete --position $cursorPosition "$wordToComplete" | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+     }
+}
 
-Import-Module posh-git
-Import-Module oh-my-posh
-Import-Module 'C:\dev\vcpkg\scripts\posh-vcpkg'
-Import-Module -Name Terminal-Icons
-Clear-Host
+# PowerShell parameter completion shim for the npm CLI
+Register-ArgumentCompleter -Native -CommandName npm -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+        $Local:ast = $commandAst.ToString().Replace(' ', '')
+        if ($Local:ast -eq 'npm') {
+            $command = 'run install start'
+            $array = $command.Split(' ')
+            $array | 
+                Where-Object { $_ -like "$wordToComplete*" } |
+                ForEach-Object {
+                    New-Object -Type System.Management.Automation.CompletionResult -ArgumentList $_
+                }
+        }
+        if ($Local:ast -eq 'npmrun') {
+            $scripts = (Get-Content .\package.json | ConvertFrom-Json).scripts
+            $scripts |
+                Get-Member -MemberType NoteProperty |
+                Where-Object { $_.Name -like "$wordToComplete*" } |
+                ForEach-Object {
+                    New-Object -Type System.Management.Automation.CompletionResult -ArgumentList $_.Name
+                }
+        }
+}
+
